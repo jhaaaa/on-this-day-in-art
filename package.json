@@ -1,0 +1,29 @@
+{
+  "name": "on-this-day-in-art",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Art discovery agent — one Met Museum artwork per day, with Chillomena Punk commentary.",
+  "scripts": {
+    "dev": "bun --watch agent/index.ts",
+    "dev:ingest": "bun --watch ingestion/index.ts",
+    "start": "bun agent/index.ts",
+    "ingest": "bun ingestion/index.ts"
+  },
+  "main": "./agent/index.ts",
+  "dependencies": {
+    "@mastra/core": "latest",
+    "@mastra/mcp": "latest",
+    "@mastra/memory": "latest",
+    "@mastra/libsql": "latest",
+    "@mastra/observability": "latest",
+    "@mastra/otel-exporter": "latest",
+    "@modelcontextprotocol/sdk": "latest",
+    "@opentelemetry/exporter-trace-otlp-proto": "latest",
+    "@astropods/adapter-mastra": "latest",
+    "dotenv": "latest"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.14",
+    "typescript": "^5.9.3"
+  }
+}
