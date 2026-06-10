@@ -1,5 +1,3 @@
 # on-this-day-in-art
 
-Describe what your agent does in one sentence.
-
-For comprehensive documentation including **critical API usage notes**, run `ast docs`.
+See [AGENTS.md](./AGENTS.md) for full project documentation, file map, MCP tools, environment variables, and architecture.
