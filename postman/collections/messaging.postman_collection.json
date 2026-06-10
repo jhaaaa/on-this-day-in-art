@@ -1,112 +1,492 @@
 {
     "info": {
-        "name": "Messaging Web API",
-        "description": "Web adapter endpoints for conversations, messages, history, and streaming.",
+        "name": "On This Day in Art — Agent Tests",
+        "description": "Tests for the on-this-day-in-art Astropods agent messaging API.\n\nEach scenario folder runs end-to-end: create conversation → send message → poll for response → assert.\n\nRun with Collection Runner with a delay of 5000ms between requests. The Poll step retries up to 12 times (60 seconds total) before failing.",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "variable": [
         {
             "key": "baseUrl",
-            "value": "http://localhost:3100"
+            "value": "http://localhost:3100",
+            "description": "Base URL for the agent messaging API."
         },
         {
             "key": "conversationId",
             "value": ""
+        },
+        {
+            "key": "pollAttempts",
+            "value": "0"
         }
     ],
     "item": [
         {
-            "name": "Health",
-            "request": {
-                "method": "GET",
-                "header": [],
-                "url": "{{baseUrl}}/health",
-                "description": "Health check endpoint."
-            }
-        },
-        {
-            "name": "Create conversation",
+            "name": "Health check",
             "event": [
                 {
                     "listen": "test",
                     "script": {
                         "exec": [
-                            "if (pm.response.code === 201) {",
-                            "    const json = pm.response.json();",
-                            "    if (json.conversation_id) {",
-                            "        pm.collectionVariables.set('conversationId', json.conversation_id);",
-                            "    }",
-                            "}"
+                            "pm.test('Agent is healthy', () => {",
+                            "    pm.response.to.have.status(200);",
+                            "});"
                         ],
                         "type": "text/javascript"
                     }
                 }
             ],
             "request": {
-                "method": "POST",
-                "header": [
-                    {
-                        "key": "Content-Type",
-                        "value": "application/json"
-                    }
-                ],
-                "body": {
-                    "mode": "raw",
-                    "raw": "{}"
-                },
-                "url": "{{baseUrl}}/api/conversations",
-                "description": "Create a new conversation. Optional body: {\"title\": \"...\", \"metadata\": {}}. Saves conversation_id to collection variable for subsequent requests."
-            }
-        },
-        {
-            "name": "Send message",
-            "request": {
-                "method": "POST",
-                "header": [
-                    {
-                        "key": "Content-Type",
-                        "value": "application/json"
-                    }
-                ],
-                "body": {
-                    "mode": "raw",
-                    "raw": "{\n  \"content\": \"Hello, what can you do?\"\n}"
-                },
-                "url": "{{baseUrl}}/api/conversations/{{conversationId}}/messages",
-                "description": "Send a message in a conversation. Requires conversation_id (set by Create conversation or manually)."
-            }
-        },
-        {
-            "name": "Get conversation history",
-            "request": {
                 "method": "GET",
                 "header": [],
-                "url": "{{baseUrl}}/api/conversations/{{conversationId}}/history",
-                "description": "Get message history for a conversation."
+                "url": "{{baseUrl}}/health"
             }
         },
         {
-            "name": "Stream (SSE)",
-            "request": {
-                "method": "GET",
-                "header": [
-                    {
-                        "key": "Accept",
-                        "value": "text/event-stream"
+            "name": "Scenario: On This Day",
+            "item": [
+                {
+                    "name": "OTD-1: Create conversation",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Conversation created', () => {",
+                                    "    pm.response.to.have.status(201);",
+                                    "    const json = pm.response.json();",
+                                    "    pm.expect(json).to.have.property('conversation_id');",
+                                    "    pm.collectionVariables.set('conversationId', json.conversation_id);",
+                                    "    pm.collectionVariables.set('pollAttempts', '0');",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [{ "key": "Content-Type", "value": "application/json" }],
+                        "body": { "mode": "raw", "raw": "{}" },
+                        "url": "{{baseUrl}}/api/conversations"
                     }
-                ],
-                "url": "{{baseUrl}}/api/conversations/{{conversationId}}/stream",
-                "description": "Server-Sent Events stream for real-time agent responses. In Postman this may show as a long-running request; use a terminal curl -N for live events."
-            }
+                },
+                {
+                    "name": "OTD-2: Send message — today",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Message accepted', () => {",
+                                    "    pm.response.to.have.status(200);",
+                                    "    pm.expect(pm.response.json()).to.have.property('message_id');",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [{ "key": "Content-Type", "value": "application/json" }],
+                        "body": { "mode": "raw", "raw": "{\n  \"content\": \"today\"\n}" },
+                        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/messages"
+                    }
+                },
+                {
+                    "name": "OTD-3: Poll — wait for agent response",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "exec": [
+                                    "// Busy-wait 10s before each poll attempt.",
+                                    "// This is intentional — no Runner delay setting needed.",
+                                    "const start = Date.now();",
+                                    "while (Date.now() - start < 10000) {}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "const data = pm.response.json();",
+                                    "const agentMsg = (data.messages || []).find(",
+                                    "    m => m.user && m.user.id === 'agent' && m.content && m.message_id",
+                                    ");",
+                                    "const attempts = parseInt(pm.collectionVariables.get('pollAttempts') || '0');",
+                                    "",
+                                    "console.log(`Poll attempt ${attempts + 1}: agent message found = ${!!agentMsg}`);",
+                                    "",
+                                    "if (!agentMsg) {",
+                                    "    if (attempts < 6) {",
+                                    "        pm.collectionVariables.set('pollAttempts', String(attempts + 1));",
+                                    "        pm.setNextRequest('OTD-3: Poll — wait for agent response');",
+                                    "    } else {",
+                                    "        pm.test('Agent responded within timeout', () => pm.expect.fail('Timed out after ~60s — check agent logs'));",
+                                    "    }",
+                                    "} else {",
+                                    "    pm.test('Agent responded', () => pm.expect(agentMsg.content).to.not.be.empty);",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/history",
+                        "description": "Polls every 10 seconds (built-in busy-wait), up to 6 retries (60s total). No Runner delay setting needed."
+                    }
+                },
+                {
+                    "name": "OTD-4: Assert — artwork card returned",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "const data = pm.response.json();",
+                                    "",
+                                    "// Debug: log the full messages array so we can see the exact structure",
+                                    "console.log('DEBUG history response:', JSON.stringify(data.messages, null, 2));",
+                                    "",
+                                    "const agentMsg = (data.messages || []).find(",
+                                    "    m => m.user && m.user.id === 'agent' && m.content && m.message_id",
+                                    ");",
+                                    "",
+                                    "pm.test('Agent message exists', () => {",
+                                    "    pm.expect(agentMsg).to.not.be.undefined;",
+                                    "});",
+                                    "",
+                                    "if (agentMsg) {",
+                                    "    const content = agentMsg.content;",
+                                    "    console.log('Agent response preview:', content.substring(0, 300));",
+                                    "",
+                                    "    pm.test('Response contains bold artwork title', () => {",
+                                    "        pm.expect(content).to.match(/\\*\\*.+\\*\\*/);",
+                                    "    });",
+                                    "",
+                                    "    pm.test('Response contains Met Museum link', () => {",
+                                    "        pm.expect(content).to.include('metmuseum.org');",
+                                    "    });",
+                                    "",
+                                    "    pm.test('Response contains artwork image', () => {",
+                                    "        pm.expect(content).to.include('![');",
+                                    "    });",
+                                    "",
+                                    "    pm.test('Response does not indicate an error', () => {",
+                                    "        pm.expect(content.toLowerCase()).to.not.include('stumped');",
+                                    "        pm.expect(content.toLowerCase()).to.not.include('error');",
+                                    "    });",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/history",
+                        "description": "Fetches history fresh and asserts directly on the agent message content."
+                    }
+                }
+            ]
         },
         {
-            "name": "Get agent config",
-            "request": {
-                "method": "GET",
-                "header": [],
-                "url": "{{baseUrl}}/api/agent/config",
-                "description": "Get agent configuration (e.g. model, tools) for the connected agent."
-            }
+            "name": "Scenario: Pick a Date",
+            "item": [
+                {
+                    "name": "DATE-1: Create conversation",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Conversation created', () => {",
+                                    "    pm.response.to.have.status(201);",
+                                    "    const json = pm.response.json();",
+                                    "    pm.expect(json).to.have.property('conversation_id');",
+                                    "    pm.collectionVariables.set('conversationId', json.conversation_id);",
+                                    "    pm.collectionVariables.set('pollAttempts', '0');",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [{ "key": "Content-Type", "value": "application/json" }],
+                        "body": { "mode": "raw", "raw": "{}" },
+                        "url": "{{baseUrl}}/api/conversations"
+                    }
+                },
+                {
+                    "name": "DATE-2: Send message — June 9",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Message accepted', () => {",
+                                    "    pm.response.to.have.status(200);",
+                                    "    pm.expect(pm.response.json()).to.have.property('message_id');",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [{ "key": "Content-Type", "value": "application/json" }],
+                        "body": { "mode": "raw", "raw": "{\n  \"content\": \"June 9\"\n}" },
+                        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/messages"
+                    }
+                },
+                {
+                    "name": "DATE-3: Poll — wait for agent response",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "exec": [
+                                    "const start = Date.now();",
+                                    "while (Date.now() - start < 10000) {}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "const data = pm.response.json();",
+                                    "const agentMsg = (data.messages || []).find(",
+                                    "    m => m.user && m.user.id === 'agent' && m.content && m.message_id",
+                                    ");",
+                                    "const attempts = parseInt(pm.collectionVariables.get('pollAttempts') || '0');",
+                                    "",
+                                    "console.log(`Poll attempt ${attempts + 1}: agent message found = ${!!agentMsg}`);",
+                                    "",
+                                    "if (!agentMsg) {",
+                                    "    if (attempts < 6) {",
+                                    "        pm.collectionVariables.set('pollAttempts', String(attempts + 1));",
+                                    "        pm.setNextRequest('DATE-3: Poll — wait for agent response');",
+                                    "    } else {",
+                                    "        pm.test('Agent responded within timeout', () => pm.expect.fail('Timed out after ~60s'));",
+                                    "    }",
+                                    "} else {",
+                                    "    pm.test('Agent responded', () => pm.expect(agentMsg.content).to.not.be.empty);",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/history"
+                    }
+                },
+                {
+                    "name": "DATE-4: Assert — June 9 artwork returned",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "const data = pm.response.json();",
+                                    "const agentMsg = (data.messages || []).find(",
+                                    "    m => m.user && m.user.id === 'agent' && m.content && m.message_id",
+                                    ");",
+                                    "",
+                                    "pm.test('Agent message exists', () => {",
+                                    "    pm.expect(agentMsg).to.not.be.undefined;",
+                                    "});",
+                                    "",
+                                    "if (agentMsg) {",
+                                    "    const content = agentMsg.content;",
+                                    "    console.log('Agent response preview:', content.substring(0, 300));",
+                                    "",
+                                    "    pm.test('Response contains bold artwork title', () => {",
+                                    "        pm.expect(content).to.match(/\\*\\*.+\\*\\*/);",
+                                    "    });",
+                                    "",
+                                    "    pm.test('Response contains Met Museum link', () => {",
+                                    "        pm.expect(content).to.include('metmuseum.org');",
+                                    "    });",
+                                    "",
+                                    "    pm.test('Response contains artwork image', () => {",
+                                    "        pm.expect(content).to.include('![');",
+                                    "    });",
+                                    "",
+                                    "    pm.test('Response references June or date context', () => {",
+                                    "        const lower = content.toLowerCase();",
+                                    "        pm.expect(lower.includes('june') || lower.includes('month') || lower.includes('date')).to.be.true;",
+                                    "    });",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/history"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Scenario: Search",
+            "item": [
+                {
+                    "name": "SEARCH-1: Create conversation",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Conversation created', () => {",
+                                    "    pm.response.to.have.status(201);",
+                                    "    const json = pm.response.json();",
+                                    "    pm.expect(json).to.have.property('conversation_id');",
+                                    "    pm.collectionVariables.set('conversationId', json.conversation_id);",
+                                    "    pm.collectionVariables.set('pollAttempts', '0');",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [{ "key": "Content-Type", "value": "application/json" }],
+                        "body": { "mode": "raw", "raw": "{}" },
+                        "url": "{{baseUrl}}/api/conversations"
+                    }
+                },
+                {
+                    "name": "SEARCH-2: Send message — painting with flowers",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "pm.test('Message accepted', () => {",
+                                    "    pm.response.to.have.status(200);",
+                                    "    pm.expect(pm.response.json()).to.have.property('message_id');",
+                                    "});"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [{ "key": "Content-Type", "value": "application/json" }],
+                        "body": { "mode": "raw", "raw": "{\n  \"content\": \"show me a painting with flowers\"\n}" },
+                        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/messages"
+                    }
+                },
+                {
+                    "name": "SEARCH-3: Poll — wait for agent response",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "exec": [
+                                    "const start = Date.now();",
+                                    "while (Date.now() - start < 10000) {}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "const data = pm.response.json();",
+                                    "const agentMsg = (data.messages || []).find(",
+                                    "    m => m.user && m.user.id === 'agent' && m.content && m.message_id",
+                                    ");",
+                                    "const attempts = parseInt(pm.collectionVariables.get('pollAttempts') || '0');",
+                                    "",
+                                    "console.log(`Poll attempt ${attempts + 1}: agent message found = ${!!agentMsg}`);",
+                                    "",
+                                    "if (!agentMsg) {",
+                                    "    if (attempts < 6) {",
+                                    "        pm.collectionVariables.set('pollAttempts', String(attempts + 1));",
+                                    "        pm.setNextRequest('SEARCH-3: Poll — wait for agent response');",
+                                    "    } else {",
+                                    "        pm.test('Agent responded within timeout', () => pm.expect.fail('Timed out after ~60s'));",
+                                    "    }",
+                                    "} else {",
+                                    "    pm.test('Agent responded', () => pm.expect(agentMsg.content).to.not.be.empty);",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/history"
+                    }
+                },
+                {
+                    "name": "SEARCH-4: Assert — search result returned",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "const data = pm.response.json();",
+                                    "const agentMsg = (data.messages || []).find(",
+                                    "    m => m.user && m.user.id === 'agent' && m.content && m.message_id",
+                                    ");",
+                                    "",
+                                    "pm.test('Agent message exists', () => {",
+                                    "    pm.expect(agentMsg).to.not.be.undefined;",
+                                    "});",
+                                    "",
+                                    "if (agentMsg) {",
+                                    "    const content = agentMsg.content;",
+                                    "    console.log('Agent response preview:', content.substring(0, 300));",
+                                    "",
+                                    "    pm.test('Response contains bold artwork title', () => {",
+                                    "        pm.expect(content).to.match(/\\*\\*.+\\*\\*/);",
+                                    "    });",
+                                    "",
+                                    "    pm.test('Response contains Met Museum link', () => {",
+                                    "        pm.expect(content).to.include('metmuseum.org');",
+                                    "    });",
+                                    "",
+                                    "    pm.test('Response contains artwork image', () => {",
+                                    "        pm.expect(content).to.include('![');",
+                                    "    });",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/history"
+                    }
+                }
+            ]
         }
     ]
 }
