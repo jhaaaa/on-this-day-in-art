@@ -1,0 +1,52 @@
+---
+description: Project context for on-this-day-in-art — architecture, decisions, and known issues
+alwaysApply: true
+---
+
+# on-this-day-in-art — Project Context
+
+An Astropods-hosted AI agent that surfaces one Met Museum artwork per request (by date or keyword) with Chillomena Punk commentary generated via Gemini. See AGENTS.md for full file map and env vars.
+
+## Stack
+
+- **Runtime:** Bun + TypeScript
+- **Agent framework:** Mastra (`@mastra/core`) — wraps Claude, tools, memory, observability
+- **LLM:** Claude claude-sonnet-4-5 (Anthropic) — reasoning, tool orchestration, response formatting
+- **MCP server:** `mcp/index.ts` — stdio transport, spawned as subprocess by `agent/index.ts` via `MCPClient`
+- **Platform:** Astropods — handles hosting, messaging (gRPC), auth, secrets, Docker builds
+- **Commentary:** Gemini 2.5 Flash via `get_gemini_summary` tool in the MCP server
+
+## Key architectural decisions
+
+- MCP server is **bundled in the Docker container** (not a public network service) — correct for a private, agent-specific tool server
+- `MCPClient` spawns `mcp/index.ts` via stdio using `{ command: "bun", args: ["run", mcpServerPath] }`
+- MCP subprocess inherits env via `{ ...process.env, GEMINI_API_KEY: process.env.GEMINI_API_KEY ?? "" }` — if this spread is removed, GEMINI_API_KEY silently disappears and `get_gemini_summary` fails
+- `GEMINI_API_KEY` is declared as an `inputs` entry in `astropods.yml` so deployers are prompted for it
+
+## Three-mode agent
+
+1. **On This Day** — `get_artworks_for_today` (default to today, three-tier fallback: exact date → month → `*`)
+2. **Pick a Day** — `get_artworks_for_today` with `month` + `day` params
+3. **Search** — `search_artworks` with `query` + `has_images: true`
+
+All three modes then call `get_artwork_detail` → `get_gemini_summary` before responding.
+
+## Known platform issues
+
+- **Astropods deployment error:** `FailedDeployModel — Unable to synthesize listener rules, there's too many attached` — this is a load balancer limit on Astropods' infrastructure, not a code issue. Contact Astropods support.
+- **Postman Collection Runner + Astropods:** Agent won't process messages without an active SSE connection. REST-only Postman collections can't trigger agent processing. Use the playground for end-to-end testing; use the `otdia` Postman collection for MCP tool-level testing.
+- **`ast blueprint push`** has intermittently hung on "load remote build context" — use GitHub integration for deployment instead.
+
+## Local dev
+
+```bash
+# Both keys must be in .env
+ANTHROPIC_API_KEY=...
+GEMINI_API_KEY=...
+
+ast dev   # playground at http://localhost:3100
+```
+
+## Deployment
+
+Push to `main` → GitHub integration triggers Astropods build automatically.
